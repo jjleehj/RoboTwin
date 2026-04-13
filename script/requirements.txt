@@ -23,4 +23,4 @@ imageio
 termcolor
 av
 matplotlib
-ffmpeg
+ffmpeg-python

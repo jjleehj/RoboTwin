@@ -1482,7 +1482,12 @@ class Base_Task(gym.Env):
 
         eval_video_freq = 1  # fixed
         if (self.eval_video_path is not None and self.take_action_cnt % eval_video_freq == 0):
-            self.eval_video_ffmpeg.stdin.write(self.now_obs["observation"]["head_camera"]["rgb"].tobytes())
+            # Use third_view_rgb if available, otherwise fallback to head_camera
+            if "third_view_rgb" in self.now_obs:
+                frame = self.now_obs["third_view_rgb"]
+            else:
+                frame = self.now_obs["observation"]["head_camera"]["rgb"]
+            self.eval_video_ffmpeg.stdin.write(frame.tobytes())
 
         self.take_action_cnt += 1
         print(f"step: \033[92m{self.take_action_cnt} / {self.step_lim}\033[0m", end="\r")
@@ -1629,7 +1634,7 @@ class Base_Task(gym.Env):
         # ========== Control Loop ==========
         while now_left_id < left_n_step or now_right_id < right_n_step:
 
-            if (now_left_id < left_n_step and now_left_id / left_n_step <= now_right_id / right_n_step):
+            if (now_left_id < left_n_step and (right_n_step == 0 or now_left_id / left_n_step <= now_right_id / right_n_step)):
                 if topp_left_flag:
                     self.robot.set_arm_joints(
                         left_result["position"][now_left_id],
@@ -1640,7 +1645,7 @@ class Base_Task(gym.Env):
 
                 now_left_id += 1
 
-            if (now_right_id < right_n_step and now_right_id / right_n_step <= now_left_id / left_n_step):
+            if (now_right_id < right_n_step and (left_n_step == 0 or now_right_id / right_n_step <= now_left_id / left_n_step)):
                 if topp_right_flag:
                     self.robot.set_arm_joints(
                         right_result["position"][now_right_id],
@@ -1658,7 +1663,11 @@ class Base_Task(gym.Env):
                 self.eval_success = True
                 self.get_obs() # update obs
                 if (self.eval_video_path is not None):
-                    self.eval_video_ffmpeg.stdin.write(self.now_obs["observation"]["head_camera"]["rgb"].tobytes())
+                    if "third_view_rgb" in self.now_obs:
+                        frame = self.now_obs["third_view_rgb"]
+                    else:
+                        frame = self.now_obs["observation"]["head_camera"]["rgb"]
+                    self.eval_video_ffmpeg.stdin.write(frame.tobytes())
                 return
 
         self._update_render()

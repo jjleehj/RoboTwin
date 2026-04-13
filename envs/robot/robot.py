@@ -45,8 +45,13 @@ class Robot:
         self.left_joint_stiffness = left_embodiment_args.get("joint_stiffness", 1000)
         self.left_joint_damping = left_embodiment_args.get("joint_damping", 200)
         self.left_gripper_stiffness = left_embodiment_args.get("gripper_stiffness", 1000)
+        self.left_planner_type = left_embodiment_args.get("planner_type", "mplib_RRT")
+        if self.left_planner_type is None:
+            self.left_planner_type = "mplib_RRT"
+        self.right_planner_type = right_embodiment_args.get("planner_type", "mplib_RRT")
+        if self.right_planner_type is None:
+            self.right_planner_type = "mplib_RRT"
         self.left_gripper_damping = left_embodiment_args.get("gripper_damping", 200)
-        self.left_planner_type = left_embodiment_args.get("planner", "mplib_RRT")
         self.left_move_group = left_embodiment_args["move_group"][0]
         self.left_ee_name = left_embodiment_args["ee_joints"][0]
         self.left_arm_joints_name = left_embodiment_args["arm_joints_name"][0]
@@ -73,7 +78,6 @@ class Robot:
         self.right_joint_damping = right_embodiment_args.get("joint_damping", 200)
         self.right_gripper_stiffness = right_embodiment_args.get("gripper_stiffness", 1000)
         self.right_gripper_damping = right_embodiment_args.get("gripper_damping", 200)
-        self.right_planner_type = right_embodiment_args.get("planner", "mplib_RRT")
         self.right_move_group = right_embodiment_args["move_group"][1]
         self.right_ee_name = right_embodiment_args["ee_joints"][1]
         self.right_arm_joints_name = right_embodiment_args["arm_joints_name"][1]
@@ -449,12 +453,15 @@ class Robot:
             })
             return self.left_conn.recv()
         else:
-            return self.left_planner.plan_path(
+            res = self.left_planner.plan_path(
                 now_qpos,
                 trans_target_pose,
                 constraint_pose=constraint_pose,
                 arms_tag="left",
             )
+            if (res.get("status") == "Fail" or getattr(self.left_planner, "is_dummy", False)) and hasattr(self, "left_mplib_planner"):
+                return self.left_mplib_planner.plan_path(now_qpos, trans_target_pose, arms_tag="left")
+            return res
 
     def right_plan_path(
         self,
@@ -483,12 +490,52 @@ class Robot:
             })
             return self.right_conn.recv()
         else:
-            return self.right_planner.plan_path(
+            res = self.right_planner.plan_path(
                 now_qpos,
                 trans_target_pose,
                 constraint_pose=constraint_pose,
                 arms_tag="right",
             )
+            if (res.get("status") == "Fail" or getattr(self.right_planner, "is_dummy", False)) and hasattr(self, "right_mplib_planner"):
+                return self.right_mplib_planner.plan_path(now_qpos, trans_target_pose, arms_tag="right")
+            return res
+    
+    def right_plan_path_endlink(
+        self,
+        endlink_target: sapien.Pose,
+        constraint_pose=None,
+        last_qpos=None,
+    ):
+        """Plan directly to an EE endlink pose, bypassing _trans_from_gripper_to_endlink.
+        Use this when the target is already expressed in the endlink frame (e.g. from
+        get_ee_endlink_pose + apply_delta_action_endlink) to avoid the 180-deg ambiguity."""
+        if constraint_pose is not None:
+            constraint_pose = self.get_constraint_pose(constraint_pose, arm_tag="right")
+        if last_qpos is None:
+            now_qpos = self.right_entity.get_qpos()
+        else:
+            now_qpos = deepcopy(last_qpos)
+
+        # No _trans_from_gripper_to_endlink — target is already in endlink frame
+        if self.communication_flag:
+            self.right_conn.send({
+                "cmd": "plan_path",
+                "qpos": now_qpos,
+                "target_pose": endlink_target,
+                "constraint_pose": constraint_pose,
+                "arms_tag": "right",
+            })
+            return self.right_conn.recv()
+        else:
+            res = self.right_planner.plan_path(
+                now_qpos,
+                endlink_target,
+                constraint_pose=constraint_pose,
+                arms_tag="right",
+            )
+            if (res.get("status") == "Fail" or getattr(self.right_planner, "is_dummy", False)) and hasattr(self, "right_mplib_planner"):
+                return self.right_mplib_planner.plan_path(now_qpos, endlink_target, arms_tag="right")
+            return res
 
     # The data of gripper has been normalized
     def get_left_arm_jointState(self) -> list:

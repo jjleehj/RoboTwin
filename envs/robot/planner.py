@@ -271,10 +271,25 @@ try:
             return result_p, result_q
     
 except Exception as e:
-    print('[planner.py]: Something wrong happened when importing CuroboPlanner! Please check if Curobo is installed correctly. If the problem still exists, you can install Curobo from https://github.com/NVlabs/curobo manually.')
-    print('Exception traceback:')
-    traceback.print_exc()
+    print('[planner.py]: CuRobo not available. Using dummy CuRoboPlanner')
+    
+    class CuroboPlanner:
+        def __init__(self, *args, **kwargs):
+            self.is_dummy = True
+        
+        def plan_path(self, *args, **kwargs):
+            return {"status": "Fail"}
 
+        def plan_batch(self, *args, **kwargs):
+            return {"status": ["Fail"] * 10}
+
+        def plan_grippers(self, now_val, target_val):
+            num_step = 1
+            return{
+                "num_step": num_step,
+                "per_step": 0,
+                "result": np.array([now_val])
+            }
 
 # ********************** MplibPlanner **********************
 class MplibPlanner:
@@ -407,6 +422,7 @@ class MplibPlanner:
         Interpolative planning with screw motion.
         Will not avoid collision and will fail if the path contains collision.
         """
+        result = {"status": "Fail"}
         if self.planner_type == "mplib_RRT":
             result = self.plan_pose(
                 now_qpos,
